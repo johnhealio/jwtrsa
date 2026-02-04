@@ -13,10 +13,11 @@ Features
 
 ```bash
 go get github.com/johnhealio/jwtrsa
+```
 
 ## Usage
 
-# Issue a token
+Issue a token
 ```Go
 issuer, _ := jwtrsa.NewIssuer(privateKeyPem)
 
@@ -29,8 +30,9 @@ claims := map[string]any{
 }
 
 token, err := issuer.Issue(claims)
+```
 
-#Validating a Token
+Validating a Token
 ```Go
 validator, _ := jwtrsa.NewValidator(publicKeyPem, "my-trusted-issuer", "my-service")
 
@@ -38,9 +40,9 @@ subject, err := validator.Validate(token)
 if err == nil {
     fmt.Printf("Authenticated user: %s\n", subject)
 }
+```
 
-
-# Development
+## Development
 Use the provided Makefile to maintain code quality:
 
 * **make test:** Run unit tests with race detection.
