@@ -1,0 +1,47 @@
+version: "2"
+
+run:
+  timeout: 5m
+  modules-download-mode: readonly
+
+linters:
+  disable-all: true
+  enable:
+    - govet         # Standard logic checker
+    - staticcheck   # Advanced patterns and performance
+    - gosec         # Security-specific scanner (Critical for Ledger)
+    - gocyclo       # Measures code complexity
+    - errcheck      # Ensures errors aren't ignored
+    - revive        # Style/naming
+    - unused        # Finds unused code
+    - misspell      # Spelling
+    - whitespace    # Spacing
+
+linters-settings:
+  gocyclo:
+    # Minimal complexity to report. 10 is the industry standard.
+    # Anything higher than 10 should probably be broken into smaller functions.
+    min-complexity: 10
+
+  govet:
+    enable-all: true
+    disable:
+      - fieldalignment
+  
+  gosec:
+    severity: "medium"
+    confidence: "medium"
+  
+  revive:
+    rules:
+      - name: exported
+        disabled: true
+
+issues:
+  exclude-rules:
+    - path: _test\.go
+      linters:
+        - gosec
+        - gocyclo # Tests are often long and complex; we can be more relaxed here
+  max-issues-per-linter: 0
+  max-same-issues: 0
