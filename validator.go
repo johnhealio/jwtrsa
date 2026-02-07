@@ -3,6 +3,7 @@ package jwtrsa
 
 import (
 	"crypto/rsa"
+	"encoding/base64"
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/johnhealio/errordetail"
@@ -15,8 +16,8 @@ type Validator struct {
 }
 
 // NewValidator returns a Validator object
-func NewValidator(publicKeyPem string, trustedIssuer string, audience string) (*Validator, error) {
-	if publicKeyPem == "" {
+func NewValidator(publicKeyB64 string, trustedIssuer string, audience string) (*Validator, error) {
+	if publicKeyB64 == "" {
 		return nil, errordetail.New(0, "public key is empty", nil)
 	}
 	if trustedIssuer == "" {
@@ -26,7 +27,12 @@ func NewValidator(publicKeyPem string, trustedIssuer string, audience string) (*
 		return nil, errordetail.New(0, "audience is empty", nil)
 	}
 
-	parsedPublicKey, err := jwt.ParseRSAPublicKeyFromPEM([]byte(publicKeyPem))
+	bytes, err := base64.StdEncoding.DecodeString(publicKeyB64)
+	if err != nil {
+		return nil, errordetail.New(0, "unable to decode public key", nil)
+	}
+
+	parsedPublicKey, err := jwt.ParseRSAPublicKeyFromPEM(bytes)
 	if err != nil {
 		return nil, errordetail.New(0, "unable to parse public key", err)
 	}

@@ -2,6 +2,7 @@ package jwtrsa
 
 import (
 	"crypto/rsa"
+	"encoding/base64"
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/johnhealio/errordetail"
@@ -15,11 +16,15 @@ type Issuer struct {
 // NewIssuer receives a private key as a string and returns an Issuer object
 func NewIssuer(privateKeyPem string) (*Issuer, error) {
 	if privateKeyPem == "" {
-		return nil, errordetail.New(0, "privateKeyPem is empty", nil)
+		return nil, errordetail.New(1, "privateKeyPem is empty", nil)
 	}
-	privateKey, err := jwt.ParseRSAPrivateKeyFromPEM([]byte(privateKeyPem))
+	privStr, err := base64.StdEncoding.DecodeString(privateKeyPem)
 	if err != nil {
-		return nil, errordetail.New(0, "unable to create private key", nil)
+		return nil, errordetail.New(1, "unable to decode private key", err)
+	}
+	privateKey, err := jwt.ParseRSAPrivateKeyFromPEM([]byte(privStr))
+	if err != nil {
+		return nil, errordetail.New(1, "unable to create private key", err)
 	}
 	return &Issuer{privateKey: privateKey}, nil
 }
@@ -36,7 +41,7 @@ func (j *Issuer) Issue(claimsMap map[string]any) (string, error) {
 
 	signedToken, err := token.SignedString(j.privateKey)
 	if err != nil {
-		return "", errordetail.New(0, "unable to sign token", err)
+		return "", errordetail.New(1, "unable to sign token", err)
 	}
 	return signedToken, nil
 }
@@ -45,7 +50,7 @@ func (j *Issuer) Issue(claimsMap map[string]any) (string, error) {
 func (j *Issuer) complete(claimsMap map[string]any) error {
 	iss, ok := claimsMap["iss"].(string)
 	if !ok || iss == "" {
-		return errordetail.New(0, "issuer not found", nil)
+		return errordetail.New(1, "issuer not found", nil)
 	}
 
 	aud, ok := claimsMap["aud"].(jwt.ClaimStrings)
@@ -54,23 +59,23 @@ func (j *Issuer) complete(claimsMap map[string]any) error {
 	}
 	for i := range aud {
 		if aud[i] == "" {
-			return errordetail.New(0, "empty audience is not allowed", nil)
+			return errordetail.New(1, "empty audience is not allowed", nil)
 		}
 	}
 
 	iat, ok := claimsMap["iat"].(int64)
 	if !ok || iat == 0 {
-		return errordetail.New(0, "iat not found", nil)
+		return errordetail.New(1, "iat not found", nil)
 	}
 
 	exp, ok := claimsMap["exp"].(int64)
 	if !ok || exp == 0 {
-		return errordetail.New(0, "exp not found", nil)
+		return errordetail.New(1, "exp not found", nil)
 	}
 
 	sub, ok := claimsMap["sub"].(string)
 	if !ok || sub == "" {
-		return errordetail.New(0, "subject not found", nil)
+		return errordetail.New(1, "subject not found", nil)
 	}
 
 	return nil

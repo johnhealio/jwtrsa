@@ -1,6 +1,8 @@
 package jwtrsa
 
 import (
+	"encoding/base64"
+	"fmt"
 	"testing"
 	"time"
 
@@ -38,11 +40,20 @@ func TestInvalidPrivKey(t *testing.T) {
 		t.Error("did not receive expected eror")
 	}
 
-	invalidPrivateKeyPem := "not valid key"
-	_, err = NewIssuer(invalidPrivateKeyPem)
+	invalidPkWithSpaces := "not valid key"
+	_, err = NewIssuer(invalidPkWithSpaces)
 	if err == nil {
 		t.Error("did not receive expected eror")
 	}
+
+	invalidPkNoSpaces := "notvalidkey"
+	pkStr := base64.StdEncoding.EncodeToString([]byte(invalidPkNoSpaces))
+	_, err = NewIssuer(pkStr)
+	fmt.Println("invalidPkNoSpaces", err)
+	if err == nil {
+		t.Error("did not receive expected eror")
+	}
+
 }
 
 type testCase struct {
@@ -59,7 +70,7 @@ func getTests() []testCase {
 			name: "Successful Token Issue",
 			claims: map[string]any{
 				"iss": "test-issuer",
-				"aud": jwt.ClaimStrings{"ledger-service"}, // Must be jwt.ClaimStrings
+				"aud": jwt.ClaimStrings{"ledger-service"},
 				"iat": now,
 				"exp": now + 3600,
 				"sub": "user-123",
