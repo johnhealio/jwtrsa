@@ -1,146 +1,199 @@
 package jwtrsa
 
 import (
-	"crypto/rand"
-	"crypto/rsa"
-	"crypto/x509"
-	"encoding/pem"
+	"encoding/base64"
+	"fmt"
 	"testing"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
 )
 
-// Helpers to generate a real RSA key pair for testing
-func generateKeyPair() (privPem string, pubPem string) {
-	key, _ := rsa.GenerateKey(rand.Reader, 2048)
+func genKeys() (string, string) {
+	privStr := GenPrivateKey()
 
-	privBlock := pem.EncodeToMemory(&pem.Block{
-		Type:  "RSA PRIVATE KEY",
-		Bytes: x509.MarshalPKCS1PrivateKey(key),
-	})
-
-	pubBytes, _ := x509.MarshalPKIXPublicKey(&key.PublicKey)
-	pubBlock := pem.EncodeToMemory(&pem.Block{
-		Type:  "PUBLIC KEY",
-		Bytes: pubBytes,
-	})
-
-	return string(privBlock), string(pubBlock)
+	privKey, err := ParsePrivateKey(privStr)
+	if err != nil {
+		return "", ""
+	}
+	pubKey, err := PublicPemFromPrivate(privKey)
+	if err != nil {
+		return "", ""
+	}
+	return privStr, pubKey
 }
 
 // Helper to create a signed token for testing
-func createToken(privPem string, claims jwt.MapClaims) string {
-	key, _ := jwt.ParseRSAPrivateKeyFromPEM([]byte(privPem))
+func createToken(privB64 string, claims jwt.MapClaims) string {
+	bytes, err := base64.StdEncoding.DecodeString(privB64)
+	if err != nil {
+		return ""
+	}
+	key, _ := jwt.ParseRSAPrivateKeyFromPEM(bytes)
 	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
 	s, _ := token.SignedString(key)
 	return s
 }
 
 func TestValidator_Validate(t *testing.T) {
-	priv, pub := generateKeyPair()
-	//_, otherPub := generateKeyPair() // For testing wrong signature
+	privKey, pubKey := genKeys()
 
-	issuer := "trusted-issuer"
-	audience := "my-app"
-
-	tests := getIssuerTests(priv, issuer, audience)
-
-	v, err := NewValidator(pub, issuer, audience)
+	iss := "MyIssuer"
+	aud := "MyAudience"
+	val, err := NewValidator(pubKey, iss, aud)
 	if err != nil {
-		t.Fatalf("failed to create validator: %v", err)
+		t.Fatalf(err.Error())
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			gotSub, err := v.Validate(tt.token)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("Validate() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-			if gotSub != tt.wantSub {
-				t.Errorf("Validate() gotSub = %v, want %v", gotSub, tt.wantSub)
-			}
-		})
+	err = testUserOk(privKey, val, iss, aud)
+	if err != nil {
+		t.Error(err.Error())
 	}
+	err = testUserEmpty(privKey, val, iss, aud)
+	if err != nil {
+		t.Error(err.Error())
+	}
+	err = testIssNotOk(privKey, val, aud)
+	if err != nil {
+		t.Error(err.Error())
+	}
+	err = testAudNotOk(privKey, val, iss)
+	if err != nil {
+		t.Error(err.Error())
+	}
+	err = testOtherKey(val, iss, aud)
+	if err != nil {
+		t.Error(err.Error())
+	}
+	err = testExpired(privKey, val, iss, aud)
+	if err != nil {
+		t.Error(err.Error())
+	}
+
 }
 
-func TestNewValidator_ConstructorErrors(t *testing.T) {
-	t.Run("Empty Public Key", func(t *testing.T) {
-		if _, err := NewValidator("", "iss", "aud"); err == nil {
-			t.Error("expected error for empty public key")
-		}
+func testUserOk(pk string, val *Validator, iss string, aud string) error {
+	userIn := "abc_123"
+	token := createToken(pk, jwt.MapClaims{
+		"iss": iss,
+		"aud": aud,
+		"sub": userIn,
+		"exp": time.Now().Add(time.Hour).Unix(),
 	})
 
-	t.Run("Invalid PEM Format", func(t *testing.T) {
-		if _, err := NewValidator("not-a-pem", "iss", "aud"); err == nil {
-			t.Error("expected error for invalid PEM")
-		}
-	})
-}
-
-type testCaseIssuer struct {
-	name    string
-	token   string
-	wantSub string
-	wantErr bool
-}
-
-func getIssuerTests(priv string, issuer string, audience string) []testCaseIssuer {
-	now := time.Now()
-
-	tests := []testCaseIssuer{
-		{
-			name: "Valid Token",
-			token: createToken(priv, jwt.MapClaims{
-				"iss": issuer,
-				"aud": audience,
-				"sub": "user_123",
-				"exp": now.Add(time.Hour).Unix(),
-			}),
-			wantSub: "user_123",
-			wantErr: false,
-		},
-		{
-			name: "Expired Token",
-			token: createToken(priv, jwt.MapClaims{
-				"iss": issuer,
-				"aud": audience,
-				"sub": "user_123",
-				"exp": now.Add(-time.Hour).Unix(),
-			}),
-			wantErr: true,
-		},
-		{
-			name: "Wrong Issuer",
-			token: createToken(priv, jwt.MapClaims{
-				"iss": "malicious-issuer",
-				"aud": audience,
-				"sub": "user_123",
-				"exp": now.Add(time.Hour).Unix(),
-			}),
-			wantErr: true,
-		},
-		{
-			name: "Wrong Audience",
-			token: createToken(priv, jwt.MapClaims{
-				"iss": issuer,
-				"aud": "wrong-app",
-				"sub": "user_123",
-				"exp": now.Add(time.Hour).Unix(),
-			}),
-			wantErr: true,
-		},
-		{
-			name: "Invalid Signature",
-			token: func() string {
-				otherPriv, _ := generateKeyPair() // Signed with a different key
-				return createToken(otherPriv, jwt.MapClaims{
-					"iss": issuer, "aud": audience, "sub": "user_123", "exp": now.Add(time.Hour).Unix(),
-				})
-			}(),
-			wantErr: true,
-		},
+	userOut, err := val.Validate(token)
+	if err != nil {
+		return fmt.Errorf("validation fail, %v", err)
 	}
-	return tests
+	if userIn != userOut {
+		return fmt.Errorf("user does not match")
+	}
+	return nil
+}
+
+func testUserEmpty(pk string, val *Validator, iss string, aud string) error {
+	userIn := ""
+	token := createToken(pk, jwt.MapClaims{
+		"iss": iss,
+		"aud": aud,
+		"sub": userIn,
+		"exp": time.Now().Add(time.Hour).Unix(),
+	})
+
+	_, err := val.Validate(token)
+	if err == nil {
+		return fmt.Errorf("did not receive expected error")
+	}
+	return nil
+}
+
+func testIssNotOk(pk string, val *Validator, aud string) error {
+	userIn := "abc_123"
+	token := createToken(pk, jwt.MapClaims{
+		"iss": "notvalid",
+		"aud": aud,
+		"sub": userIn,
+		"exp": time.Now().Add(time.Hour).Unix(),
+	})
+
+	_, err := val.Validate(token)
+	if err == nil {
+		return fmt.Errorf("did not receive the expected error")
+	}
+	return nil
+}
+
+func testAudNotOk(pk string, val *Validator, iss string) error {
+	userIn := "abc_123"
+	token := createToken(pk, jwt.MapClaims{
+		"iss": iss,
+		"aud": "notvalid",
+		"sub": userIn,
+		"exp": time.Now().Add(time.Hour).Unix(),
+	})
+
+	_, err := val.Validate(token)
+	if err == nil {
+		return fmt.Errorf("did not receive the expected error")
+	}
+	return nil
+}
+
+func testOtherKey(val *Validator, iss string, aud string) error {
+	privKey := GenPrivateKey()
+	userIn := "abc_123"
+	token := createToken(privKey, jwt.MapClaims{
+		"iss": iss,
+		"aud": aud,
+		"sub": userIn,
+		"exp": time.Now().Add(time.Hour).Unix(),
+	})
+
+	_, err := val.Validate(token)
+	if err == nil {
+		return fmt.Errorf("did not receive expected error")
+	}
+	return nil
+}
+
+func testExpired(pk string, val *Validator, iss string, aud string) error {
+	userIn := "abc_123"
+	exp := (time.Now().Unix()) - 1
+	token := createToken(pk, jwt.MapClaims{
+		"iss": iss,
+		"aud": aud,
+		"sub": userIn,
+		"exp": exp,
+	})
+
+	_, err := val.Validate(token)
+	if err == nil {
+		return fmt.Errorf("did not received expected err")
+	}
+	return nil
+}
+
+func TestBadValidator(t *testing.T) {
+	_, pubKey := genKeys()
+
+	_, err := NewValidator("notvalid", "MyIss", "MyAud")
+	if err == nil {
+		t.Error("publicKey: did not receive expected error")
+	}
+	_, err = NewValidator("$", "MyIss", "MyAud")
+	if err == nil {
+		t.Error("$publicKey: did not receive expected error")
+	}
+	_, err = NewValidator("", "MyIss", "MyAud")
+	if err == nil {
+		t.Error("empty publicKey: did not receive expected error")
+	}
+	_, err = NewValidator(pubKey, "", "MyAud")
+	if err == nil {
+		t.Error("iss: did not receive expected error")
+	}
+	_, err = NewValidator(pubKey, "MyIss", "")
+	if err == nil {
+		t.Error("aud: did not receive expected error")
+	}
 }

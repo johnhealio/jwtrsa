@@ -22,6 +22,12 @@ func TestKeyGen(t *testing.T) {
 	if len(publicKey) == 0 {
 		t.Error("empty public key generated")
 	}
+
+	_, err = ParsePrivateKey("$")
+	if err == nil {
+		t.Error("did not receive expected error")
+	}
+
 }
 
 func TestEmptyKey(t *testing.T) {

@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/pem"
 	"errors"
 )
@@ -15,7 +16,8 @@ func GenPrivateKey() string {
 		Type:  "RSA PRIVATE KEY",
 		Bytes: x509.MarshalPKCS1PrivateKey(privateKey),
 	})
-	return string(pemData)
+	privB64 := base64.StdEncoding.EncodeToString(pemData)
+	return privB64
 }
 
 // PublicPemFromPrivate takes an RSA Private Key and returns the Public Key in PEM format.
@@ -38,13 +40,18 @@ func PublicPemFromPrivate(priv *rsa.PrivateKey) (string, error) {
 		Type:  "PUBLIC KEY",
 		Bytes: derBytes,
 	}
-
-	return string(pem.EncodeToMemory(block)), nil
+	bytes := pem.EncodeToMemory(block)
+	pubB64 := base64.StdEncoding.EncodeToString(bytes)
+	return pubB64, nil
 }
 
 // ParsePrivateKey receives a private key string and returns *rsa.PrivateKey or error
 func ParsePrivateKey(s string) (*rsa.PrivateKey, error) {
-	block, _ := pem.Decode([]byte(s))
+	bytes, err := base64.StdEncoding.DecodeString(s)
+	if err != nil {
+		return nil, errors.New("failed to decode private key")
+	}
+	block, _ := pem.Decode(bytes)
 	if block == nil {
 		return nil, errors.New("failed to parse PEM block")
 	}
